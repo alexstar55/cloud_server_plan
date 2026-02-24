@@ -272,197 +272,87 @@ out = torch.einsum('oc,btchw->bthw', weight_matrix, out_4x)
 
 # phase 1与phase 2作为主攻方向 
 **确认：Phase 1（mHC+Diffusion Policy）与 Phase 2（Engram+SparseDrive）是绝对主攻方向。**  
-Phase 1 **1.5周出基线超越**，建立技术信心；Phase 2 **2.5周完成核心实验**，冲击CVPR/ICCV。**双卡无NVLink恰好完美并行**——卡0跑具身，卡1跑智驾，互不干扰。
+Phase 1 优先追求**“可复现 + 可归因 + 可写”**；Phase 2 优先追求**“闭环可跑通 + 子集趋势有效 + 证据链完整”**。  
+**双卡无NVLink策略不变**——卡0跑具身，卡1跑智驾，互不干扰（但同卡多进程并行训练默认不做，避免显存争抢与不确定性）。
 
 以下是**逐日实验计划表**，精确到**每个文件的修改位置、每条命令的预估执行时间**。所有代码库均已开源，环境配置控制在**4小时内**。
 
 ---
 
-# 🧪 Phase 1：mHC + Diffusion Policy（具身·1.5周）
-**目标**：验证mHC在扩散UNet中的收益，推理步数8→4，成功率提升3-5%，**投ICRA 2027 / CoRL 2026 workshop**
+## ✅ Phase 1（mHC + Diffusion Policy）建议改为“Gate制”，先MVE再DP
+> 目的：降低“LIBERO-90基线复现/耗时/环境”对进度的单点卡死风险，并把 `mve-training-warning/` 直接纳入 Phase 1 证据链。
 
-## 📅 第1天：环境搭建与基线复现
-| 时段 | 任务 | 操作 | 预期产出 | 耗时 |
-|------|------|------|------|------|
-| 上午 | 代码库Fork | `git clone https://github.com/real-stanford/diffusion_policy` | 本地仓库 | 0.5h |
-| 上午 | 环境配置 | `conda create -n dp python=3.9` + `pip install -e .` | 可运行环境 | 1h |
-| 下午 | 数据集下载 | LIBERO：`wget ...`（约15GB） | 数据就绪 | 2h（后台） |
-| 下午 | 基线训练 | `python train.py --config_name=libero_90` | 完成1个seed | 3h（卡0） |
-| 晚上 | 基线评估 | 运行官方评估脚本，记录成功率 | 基线数字 | 1h |
+### Gate0（0.5–1天）：先跑通最小验证（MVE）
+- 直接复用你已有的：`面向个人执行/mve-training-warning/`
+- 产出物（必须可贴图/可写进短文）：
+  - Sinkhorn投影误差曲线（constraint_on/off 对比）
+  - 指标聚合表（多seed均值/方差）
+- 通过标准：
+  - 全流程无NaN/Inf
+  - 指标与README预期一致（或差异能解释）
 
-**关键检查点**：基线成功率是否接近论文宣称值（LIBERO-90 ~85%）。若偏差>5%，排查数据增强/步数差异。
+> 备注：Gate0 的结果也可以作为 `main1.tex` 的 pilot figure（训练稳定性诊断），同时为后续 DP 接 mHC 的数值稳定性“兜底”。
 
----
+### Gate1（1–2天）：Diffusion Policy 基线先用“小任务/小套件”复现
+- 不再把 `LIBERO-90 ~85%` 作为第一天硬门槛（过于依赖环境与训练时长）。
+- 建议顺序：
+  1) 单任务（如 kettle/插拔）或 LIBERO-10 先通训练与评估链路
+  2) 再升级到 LIBERO-90（作为后续加分项）
 
-## 📅 第2-3天：mHC模块实现与单元测试
-| 时段 | 任务 | 具体操作 | 文件路径 | 耗时 |
-|------|------|------|------|------|
-| 第2天上午 | 实现Sinkhorn-Knopp | `utils/sinkhorn.py`：双随机投影，eps=1e-6，迭代20次 | 新增文件 | 1.5h |
-| 第2天下午 | 修改残差块 | `models/diffusion/unet.py`：找到ResBlock类，forward中扩维至4倍，应用可学习矩阵 | 关键修改 | 2h |
-| 第2天晚上 | 跳跃连接改造 | `models/diffusion/unet.py`：cross-attention融合改为mHC加权 | 扩展修改 | 1.5h |
-| 第3天上午 | 单元测试 | 构造随机tensor，验证输出形状、梯度流、矩阵双随机性质 | 测试通过 | 1h |
-| 第3天下午 | 集成至训练脚本 | 增加命令行参数 `--use_mhc`，控制是否启用 | 配置开关 | 1h |
-| 第3天晚上 | 小规模过拟合测试 | 在单任务（kettle）上训练100步，观察loss是否下降 | 功能验证 | 1h |
+### Gate2（2–3天）：只改 ResBlock 残差（mHC），skip保持不动（便于归因）
+- 第一版只做 “mHC-residual”，不做“跳跃连接mHC融合”
+- 必做单测/断言：
+  - 输出shape一致
+  - backward可跑通
+  - Sinkhorn行列和误差在阈值内（并记录到日志）
 
-**技术难点**：Sinkhorn-Knopp需要**冻结归一化温度**，参考mHC原论文附录。提供**关键代码片段**已私信。
+### Gate3（3–7天）：2–3个seed的小规模对比 + 推理步数压缩
+- 核心对比（最小可发表证据链）：
+  - baseline（8步推理）
+  - mHC-residual（8步推理）
+  - mHC-residual（4步推理）
+- 成功标准建议改为（更稳）：
+  - “4步推理不显著劣于 baseline 8步”（或在关键任务上持平/小幅提升）
+  - 训练曲线尖峰/不稳定事件减少（配合 Gate0 的诊断指标）
 
----
-
-## 📅 第4-6天：正式训练与消融
-**利用卡0独占48GB，batch size开到64（基线默认32）**
-
-| 实验 | 配置 | 命令 | 耗时 | 并行策略 |
-|------|------|------|------|------|
-| **Exp A** | 基线（无mHC） | `python train.py --seed=0` | 24h | 卡0进程1 |
-| **Exp B** | mHC（残差+跳跃） | `python train.py --use_mhc --seed=0` | 24h | 卡0进程2（交替） |
-| **Exp C** | mHC（仅残差） | `--use_mhc --no_jump_mhc` | 24h | 卡0进程3 |
-| **Exp D** | mHC（跳跃LR=1e-3） | `--use_mhc --jump_lr=1e-3` | 24h | 卡0进程4 |
-
-**第4天**：启动Exp A、B，**利用多进程充分利用单卡**（PyTorch不支持同卡并行训练？——需使用CUDA_VISIBLE_DEVICES=0，但两个进程争显存可能OOM。**建议串行**：白天跑A，晚上跑B，第5天白天跑C，晚上跑D。）  
-**第5-6天**：交替训练，同时使用**wandb**监控loss曲线。
-
-**评估**：每训练完成一个seed，立即运行`python eval.py --checkpoint ...`记录成功率。
+### Gate4（可选）：再做 skip-mHC 融合（如果 Gate3 已经有效）
+- 只有在 Gate3 明确有效时才扩改 skip，避免“多改动导致不可归因”。
 
 ---
 
-## 📅 第7-9天：多种子实验与指标整理
-| 任务 | 操作 | 耗时 | 产出 |
-|------|------|------|------|
-| 补全3个种子 | 对A/B/C/D各跑seed=1,2 | 3×24h=72h（第7-9天） | 置信区间 |
-| 推理步数压缩 | 将mHC模型在eval时`--num_inference_steps=4`（基线8），测成功率 | 2h | 核心亮点 |
-| 可视化 | 绘制成功率柱状图、推理延迟对比 | 3h | 论文图1-3 |
+# 🚗 Phase 2（Engram + SparseDrive）关键表述降风险：maps-only 与 FLOPs 预期
+**目标**：HD地图→Engram离线检索，同等精度替换式降算/或收敛加速/或鲁棒性提升，若 Engram 只是“叠加模块”，FLOPs 可能上升；要讲 FLOPs 下降，需要做**替换**（删/降配某些 map/queries 计算）**首篇arXiv，冲CVPR 2027**
+- Phase 2 的优先证据链建议为：
+  1) 不伤基线（全量NDS守门）
+  2) 子集趋势提升（远距/遮挡/车道线拓扑稳定性）
+  3) 训练更稳/更快（同等迭代更高 mAP/NDS）
+  4) FLOPs/Latency（作为“可选加分”，除非做了结构替换）
 
-**预期结果**：mHC在**4步推理**时成功率仍高于基线8步，延迟减半，控制频率从7Hz→10Hz+。
+### Phase 2 Gate（建议）
+- G1（2–3天）：Engram 离线建表脚本 + 检索可视化（不训练）
+- G2（2–3天）：SparseDrive forward接入 + 训练不崩（短训/子集）
+- G3（≥1周）：子集趋势实验 + 1–2个关键切片报表（远距/遮挡/`bus`）
 
----
-
-## 📅 第10天：论文初稿（可选）
-若时间允许，整理**2页workshop短文**，核心贡献：  
-- 首次将流形约束残差引入机器人扩散策略  
-- 推理加速2倍，性能不降反升  
-
-**投递目标**：CoRL 2026 workshop（截稿通常9月），或ICRA 2027（截稿9月）。
-
----
-
-# 🚗 Phase 2：Engram + SparseDrive（智驾·2.5周）
-**目标**：HD地图→Engram离线检索，同等精度FLOPs↓20% 或 mAP↑4-6%，**首篇arXiv，冲CVPR 2027**
-
-## 📅 第1天：环境与基线
-| 时段 | 任务 | 操作（卡1） | 耗时 |
-|------|------|------|------|
-| 上午 | 代码库Fork | `git clone https://github.com/sdc-ai/SparseDrive` | 0.5h |
-| 上午 | 环境配置 | `conda create -n sparsedrive python=3.8` + `pip install -r requirements.txt` | 1h |
-| 下午 | 数据集 | nuScenes（完整版~300GB）——**只需地图标注，可只下载maps文件夹** | 2h（后台） |
-| 下午 | 基线训练 | `tools/dist_train.sh configs/sparsedrive_nus.py 1` | 8h（卡1通宵） |
-
-**重要**：SparseDrive是稀疏架构，单卡48GB可跑batch=16+，夜间训练不影响Phase 1。
-
----
-
-## 📅 第2-3天：Engram建表（核心创新）
-**目标**：将nuScenes HD地图转化为N-gram哈希表，存储局部路网向量。
-
-| 时段 | 任务 | 具体操作 | 文件/脚本 | 耗时 |
-|------|------|------|------|------|
-| 第2天上午 | 解析HD地图 | `tools/parse_nuscenes_map.py`：提取车道线节点、连接关系、位置 | 新增文件 | 2h |
-| 第2天下午 | 构建图嵌入 | 使用Node2Vec或简单MLP将局部子图映射为128维向量 | 2h |
-| 第2天晚上 | N-gram哈希索引 | Key = (x_grid, y_grid, heading_theta) → 网格0.5m，航向8分区 | 2h |
-| 第3天上午 | 存储为nn.EmbeddingBag | 哈希冲突时平均处理，保存为`.pth`文件 | 1h |
-| 第3天下午 | 可视化验证 | 随机选取坐标，查表返回向量，检查是否与附近车道线相关 | 2h |
-
-**关键技术**：网格划分粒度需与SparseDrive的BEV分辨率对齐（0.5m/格）。**代码模板已备好**。
-
----
-
-## 📅 第4-5天：模型改造
-| 模块 | 修改文件 | 改造内容 | 耗时 |
-|------|------|------|------|
-| 感知颈部 | `models/dense_heads/sparse_head.py` | 在BEV特征提取后插入**Engram检索模块** | 2h |
-| 检索模块 | `models/engram/retriever.py` | 根据当前ego位置+航向，查表并输出128维向量 | 1.5h |
-| 融合方式 | `models/engram/fusion.py` | FiLM调制：`gamma * feat + beta`，gamma/beta由检索向量预测 | 1.5h |
-| 训练开关 | `tools/train.py` | 添加`--use_engram`参数 | 0.5h |
-| 单元测试 | 模拟输入，验证输出形状、梯度回传 | 1h |
-
-**第4天**：集中编码，第5天上午完成集成，下午开始训练。
-
----
-
-## 📅 第6-8天：训练与消融
-**卡1独占48GB，batch=16，总迭代约24h/实验**
-
-| 实验 | 配置 | 训练时间 | 评估 |
-|------|------|------|------|
-| **Exp0** | 基线（无Engram） | 24h（第6天） | mAP、NDS |
-| **Exp1** | 基线 + Engram（FiLM融合） | 24h（第7天） | 同上 |
-| **Exp2** | 基线 + Engram（加法融合） | 24h（第8天） | 消融 |
-| **Exp3** | 基线 + Engram（随机表） | 12h（第8晚） | 控制实验 |
-
-**注意**：SparseDrive官方训练24h可收敛，你只需对比**收敛时的mAP**，无需训练完24个epoch。
-
----
-
-## 📅 第9天：FLOPs分析与推理加速
-- 使用`fvcore`计算模型FLOPs，对比基线 vs Engram版本
-- 预期**感知前端计算量↓20-30%**（因为无需重算车道线，注意力查询减少）
-- 记录**推理延迟**（ms/frame）
-
-**核心证据**：固定mAP时，Engram版本FLOPs显著降低；或固定FLOPs时，mAP提升。
-
----
-
-## 📅 第10天：消融与可视化
-| 任务 | 工具 | 产出 |
-|------|------|------|
-| 检索命中率分析 | 统计测试集查表命中率 | 证明Engram有效性 |
-| 失败案例对比 | 基线误检车道线，Engram正确 | 论文图 |
-| 注意力热图 | 可视化BEV特征，加Engram后车道线区域激活更强 | 定性证据 |
-
----
-
-## 📅 第11天：论文初稿
-- **arXiv preprint** 框架：标题《Retrieval-Augmented Perception: HD Map as Engram for Autonomous Driving》
-- 核心图表：方法流程图、mAP/FLOPs对比柱状图、可视化案例
-- **投递目标**：CVPR 2027（截稿11月），先挂arXiv占坑
-
----
-
-# ⚡ 双卡并行作战时间轴（整合版）
-
-| 日期 | 卡0（具身） | 卡1（智驾） |
-|------|------------|------------|
-| Day 1 | 环境+基线训练 | 环境+数据下载 |
-| Day 2 | mHC编码+单元测试 | 解析HD地图 |
-| Day 3 | mHC集成+过拟合测试 | 建Engram表 |
-| Day 4 | 训练Exp A（基线） | 模型改造编码 |
-| Day 5 | 训练Exp B（mHC） | 模型集成+单元测试 |
-| Day 6 | 训练Exp C（消融1） | 训练Exp0（基线） |
-| Day 7 | 训练Exp D（消融2） | 训练Exp1（Engram） |
-| Day 8 | 多种子训练（seed1） | 训练Exp2/3（消融） |
-| Day 9 | 多种子+推理压缩 | FLOPs分析+延迟测试 |
-| Day 10 | 可视化+指标汇总 | 消融实验+可视化 |
-| Day 11 | 论文workshop版 | arXiv初稿 |
-
-**每天上午**：检查昨夜训练进度，启动新实验；**下午**：编码/分析；**晚上**：后台训练。
+*(注：原逐日排期表已删除，全面改用上述 Gate 里程碑制，利用主线任务的夜间/碎片时间推进，避免与主线工程冲突。)*
 
 ---
 
 # ✅ 成功标准
 
 **Phase 1**：
-- [ ] Diffusion Policy + mHC 在LIBERO-90上**平均成功率 ≥ 基线 + 3%**
-- [ ] **4步推理成功率 ≥ 基线8步成功率** → 延迟减半，10Hz控制闭环
+- [ ] Diffusion Policy + mHC 在小任务或 LIBERO 子集上**验证有效（如4步推理不显著劣于基线8步）**
+- [ ] **Gate0（MVE）已在本地RTX4060完成**，图表直接用于撰写 `main1.tex` 和主线汇报。
 
 **Phase 2**：
-- [ ] Engram + SparseDrive 在nuScenes检测任务上**mAP ≥ 基线 + 4%**，或**FLOPs ↓20%且mAP不掉**
+- [ ] Engram + SparseDrive 在nuScenes检测任务上实现**替换式降算/或收敛加速/或鲁棒性提升**
 - [ ] 检索命中率 > 90%（验证集）
 
 ---
 
 # 📮 后续行动
 
-1. **明天即可开始**：Fork代码库，配置环境。
-2. **私信你Sinkhorn-Knopp实现参考**与**HD地图解析脚本模板**。
-3. 两个阶段的**代码库tag**我会帮你维护，确保可复现。
+1. **主线优先**：在云服务器上优先配置主线所需的 Docker/环境。
+2. **环境隔离**：为 Phase 1 (DP) 和 Phase 2 (SparseDrive) 创建独立的 conda 环境，避免与主线仿真工具链冲突。
+3. **资产复用**：将本地跑通的 `mve-training-warning` 脚本直接封装为一个小工具，准备接入主线的 Validator。
 
 你的双5880已就绪，这两把刀——**mHC与Engram**——将在未来三周为你劈开两条独立的顶会通道。
