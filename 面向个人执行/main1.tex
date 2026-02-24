@@ -1,0 +1,427 @@
+% !TEX program = pdflatex
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{graphicx}
+
+% --- Notation ---
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\abs}[1]{\left\lvert #1 \right\rvert}
+\newcommand{\eps}{\varepsilon}
+
+\title{\textbf{The Diagnostic Turn: Detecting AI Anomalies and Deepfakes\\via Mathematical Invariant Violations}}
+\author{Ziming Zhang\thanks{This manuscript is intended for submission to arXiv as a preprint. All rights reserved by the author(s). This copy is provided for review purposes only and should not be distributed.} \\
+Pix Moving (Suzhou) Co., Ltd., Suzhou, China\\
+\texttt{zhangzhiming101@126.com}
+}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We advocate a complementary perspective for AI diagnostics: beyond preserving invariants when constructing models, we monitor invariant violations as quantitative signals of anomalous behavior.
+In this short paper we focus on a practically actionable instantiation: \textbf{training-instability diagnostics} via deviation from a matrix-scaling (bistochastic) constraint set using Sinkhorn projection; depending on the score construction and calibration, the signal may lead or lag standard indicators.
+We further test a \emph{closed-loop} variant that uses the same deviation as a differentiable training-time regularizer; a weight sweep indicates that intermediate regularization can reduce the lag of $\mathcal{D}_{\text{BM}}^{(Q)}$ relative to Loss-EMA, while overly large weights can yield highly variable lead times.
+We also briefly discuss three additional directions---approximate symplecticity monitoring (under differentiable state-space assumptions), vulnerability mapping via curvature estimators under pullback metrics, and deepfake discrimination via persistent topological distances in deep feature spaces---as extensions of the same deviation-to-constraint-set diagnostic principle.
+\end{abstract}
+
+\paragraph{Keywords.}
+AI Safety; Mathematical Invariants; Symplectic Geometry; Optimal Transport; Curvature; Topological Data Analysis; Anomaly Detection.
+
+\section{Introduction}
+
+The evolution of artificial intelligence, particularly deep learning, has been profoundly shaped by the principle of \emph{invariant preservation}. From the identity mappings in residual networks (ResNets) inspired by dynamical systems to continuous-time generative modeling frameworks such as flow matching \cite{lipman2023flow}, the strategic use of mathematical structure has often improved stability and generalization. Recent work has extended this principle to the architectural level: the Manifold-Constrained Hyper-Connections (mHC) framework \cite{deepseek2025mhc} explicitly enforces bistochastic and symplectic constraints to regularize network dynamics and enhance training stability. Motivated by this trend, we view ``detection via structural violation'' as a principled, mathematically-grounded diagnostic lens that may be less sensitive to superficial adaptations.
+
+In this paper, we establish a \emph{mathematics-invariant-based AI diagnostics} framework. Rather than solely constructing models that respect invariants, we advocate for \emph{active, quantitative monitoring} of invariant maintenance as a continuous health metric---analogous to an electrocardiogram for AI systems. Our framework unifies diverse diagnostic objectives under a single formalism and provides concrete instantiations across four application domains. We begin by reviewing the mathematical foundations, then present a general deviation-to-constraint-set diagnostic principle, elaborate on four diagnostic directions with detailed mathematical formulations, outline proof-of-concept experimental designs, and conclude with a discussion of future directions.
+\paragraph{Contributions and positioning.}
+Our primary contributions are conceptual, methodological, and (in the focused direction) experimental:
+\begin{itemize}
+\item We articulate AI diagnostics as \emph{monitoring deviations from invariant constraint sets}, shifting focus from model construction to model introspection.
+\item We provide a \emph{unified deviation formalism} and instantiate it concretely for \textbf{training instability monitoring} via Sinkhorn-based projection to a matrix-scaling constraint set.
+\item We specify a minimal, reproducible experimental protocol (Section~\ref{sec:pilot}) and provide a placeholder for pilot results and an accompanying open-source reference implementation.
+\item We report a closed-loop \emph{constraint+diagnostic} ablation via a regularization-weight sweep, quantifying how lead time depends on the regularizer strength.
+\item We briefly outline three further diagnostic directions (symplectic, curvature, topology) as extensions under additional modeling assumptions.
+\end{itemize}
+
+\paragraph{Relation to prior work.}
+Existing anomaly and deepfake detection methods predominantly rely on statistical deviations in feature representations, learned forensic signatures, or domain-specific heuristics. Invariance-based approaches have been explored in specialized contexts---e.g., causal invariances under distribution shifts, texture/domain invariances for robust deepfake detection, and topological data analysis (TDA) for adversarial signatures in multimodal systems. Our framework shifts the diagnostic reference from feature-level anomalies to \emph{constraint-set deviations} rooted in mathematical structure. To the best of our knowledge, this unified ``deviation-to-constraint-set'' formulation has not been systematically applied to connect dynamical distortion, training instability, decision-boundary fragility, and topological authenticity verification within a single cohesive framework. We position our work as \emph{complementary} to existing detectors, offering an additional mathematical lens for model health assessment. A detailed comparison is provided in Section~\ref{sec:related}.
+
+\section{Related Work and Positioning}
+\label{sec:related}
+
+This work lies at the intersection of invariant-oriented learning and post-hoc diagnostic methodologies. Our distinguishing feature is the treatment of invariant structures as \emph{diagnostic references}, with violations serving as quantifiable anomaly signals.
+
+\paragraph{Invariant anomaly detection under distribution shifts.}
+Recent work has explored invariant-based anomaly detection from causal and invariance perspectives, particularly under distribution shifts \cite{carvalho2023invariant}. These approaches typically define invariance at the level of causal mechanisms, distributional properties, or environment-stable predictors, exploiting violations as anomaly indicators. While philosophically aligned, our framework operates at a different abstraction layer: we emphasize \emph{mathematical-structure invariants}---such as symplecticity defects, distances to constraint manifolds (e.g., bistochastic matrices), curvature-based diagnostics, and topological persistence signatures---and propose a unified ``projection-to-constraint-set'' functional form applicable beyond specific distributional assumptions.
+
+\paragraph{Deepfake detection via invariant texture and domain cues.}
+The deepfake forensics community has developed increasingly sophisticated detectors by leveraging data-level and feature-level invariances. Invariant texture violation has been proposed as a robust cue against generation artifacts \cite{sun2020invariant}, while domain-invariant, patch-discriminative representations have been employed for cross-domain generalization \cite{zhang2024domain}. In contrast, our ``topological deepfake discrimination'' approach (Section~4.4) aims to characterize real versus generated data via \emph{persistent topological signatures} in deep feature manifolds. This perspective is designed to capture global geometric/topological discrepancies that may remain detectable even when low-level statistical cues are adversarially optimized away.
+
+\paragraph{Topological signatures for adversarial detection in multimodal alignment.}
+Recent advances have utilized topological data analysis to detect adversarial phenomena by examining topological signatures in multimodal alignment spaces \cite{vu2025topological}. While closely related in methodology (persistent homology), this work differs in scope: we position TDA as one instantiation of a broader diagnostic principle that also encompasses training instability (via bistochastic manifold deviation), reasoning-time dynamical anomalies (via symplecticity defects when an appropriate state-space structure is defined), and decision-boundary fragility (via directional curvature diagnostics).
+
+\paragraph{Summary of distinctions.}
+Table~\ref{tab:rw} provides a structured comparison of our approach with representative prior work, highlighting differences in mathematical grounding and application scope.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{@{}p{0.20\linewidth}p{0.30\linewidth}p{0.27\linewidth}p{0.19\linewidth}@{}}
+\toprule
+\textbf{Direction} & \textbf{Representative work} & \textbf{Core idea / method} & \textbf{Key difference} \\
+\midrule
+Anomaly detection under shifts
+& Carvalho et al.~(2023) \cite{carvalho2023invariant}
+& Invariance/causal perspective; detect anomalies via mechanism violations across environments
+& Operates primarily at data/feature/causal-mechanism level; we target mathematical-structure invariants with a unified constraint-set projection formalism \\
+\addlinespace
+Deepfake detection (robust cues)
+& Sun et al.~(2020) \cite{sun2020invariant}; Zhang et al.~(2024) \cite{zhang2024domain}
+& Texture-invariance violations; domain-invariant and patch-discriminative features
+& Focused on low-/mid-level pixel/feature cues; we propose topology-based distances in deep feature manifolds as a complementary, more global diagnostic \\
+\addlinespace
+Adversarial detection (multimodal)
+& Vu et al.~(2025) \cite{vu2025topological}
+& TDA-based signatures for adversaries in multimodal alignments
+& Similar tooling (TDA) but narrower problem scope; our framework spans training, inference, robustness, and authenticity in a unified manner \\
+\bottomrule
+\end{tabular}
+\caption{Positioning relative to representative existing work.}
+\label{tab:rw}
+\end{table}
+
+\section{Background: Key Mathematical Invariants}
+
+Our diagnostic framework is grounded in four classes of mathematical invariants, each offering distinct perspectives on system structure and behavior:
+
+\begin{enumerate}
+  \item \textbf{Symplectic structure in Hamiltonian systems.}
+  Hamiltonian dynamics preserve phase-space volume (Liouville's theorem) and the canonical symplectic form, ensuring energy conservation and time reversibility---hallmarks of stable, reversible dynamical systems.
+
+  \item \textbf{Bistochasticity of transport operators.}
+  Bistochastic matrices (nonnegative entries with unit row and column sums) preserve probability measures during transport. The bistochastic matrix manifold plays a central role in ensuring training stability and representational consistency in architectures incorporating manifold constraints, as exemplified by the Manifold-Constrained Hyper-Connections (mHC) framework \cite{deepseek2025mhc}.
+
+  \item \textbf{Curvature of representation manifolds.}
+  Under a Riemannian metric on a learned representation space, curvature (e.g., Ricci curvature) quantifies the local geometric ``bending'' of the space. Regions of low curvature typically exhibit greater robustness, while high-curvature regions are often associated with vulnerability to perturbations.
+
+  \item \textbf{Topological indices and persistent invariants.}
+  Index-theoretic perspectives (e.g., Atiyah--Singer) connect local differential-geometric properties to global topological invariants. In practice, persistent homology provides computable topological signatures (e.g., Betti numbers across filtration scales) that characterize intrinsic data manifold structure.
+\end{enumerate}
+
+\section{A Unified Diagnostic Framework}
+
+We advance the following diagnostic principle: \emph{in a healthy operational state, an AI model's internal dynamics tend to preserve, or closely approximate, the mathematical invariants inherent in its design or implicit in its learned representations. Conversely, significant deviations from these invariants may serve as mathematically-grounded indicators of underlying anomalies.}
+
+It is important to emphasize that we do \emph{not} claim universal invariant preservation across all well-functioning models. Rather, we propose that for models designed with---or empirically observed to approximate---specific structural properties, systematic monitoring of invariant deviations provides a principled diagnostic signal. This approach is intended to \emph{complement}, not replace, existing detection and monitoring methodologies.
+
+To formalize this principle, let $M$ denote the diagnostic object of interest (e.g., weight matrices, state trajectories, point clouds), and let $\mathcal{I}$ represent the target invariant, typically formulated as a \emph{constraint set} in an appropriate mathematical space. Let $\Phi: M \mapsto \text{space}(\mathcal{I})$ be an extraction operator that maps $M$ to the relevant mathematical object. We define an \emph{Invariant Deviation Metric} via projection (or approximate projection) onto the constraint set:
+\begin{equation}
+\mathcal{D}(M,\mathcal{I})
+= \norm{ \Phi(M) - \Pi_{\mathcal{I}}\!\big(\Phi(M)\big) },
+\end{equation}
+where $\Pi_{\mathcal{I}}$ denotes a projection (or correction) operator whose output lies in $\mathcal{I}$. The norm $\norm{\cdot}$ is chosen according to context (e.g., Frobenius norm for matrices, bottleneck or Wasserstein distance for persistence diagrams). Larger values of $\mathcal{D}(M,\mathcal{I})$ suggest higher anomaly likelihood, contingent on modeling assumptions and the chosen extraction/projection operators.
+
+This formulation provides a flexible template: by specifying $\Phi$, $\mathcal{I}$, and $\Pi_{\mathcal{I}}$, we can instantiate diverse diagnostic signals across different structural perspectives.
+\section{Primary Direction: Training Instability Monitoring via Matrix-Scaling Deviation}
+\label{sec:training-warning}
+
+We now present the focused diagnostic direction of this paper: an actionable monitoring signal for training instabilities based on deviation from a matrix-scaling (bistochastic) constraint set.
+
+\paragraph{Diagnostic objective.}
+Provide a quantitative monitoring channel for training instabilities, including gradient explosions, optimizer divergence, or abrupt loss spikes. We emphasize that the deviation signal is not guaranteed to be an early-warning indicator and can lag in some settings (Section~\ref{sec:pilot}).
+
+\paragraph{Mathematical formulation.}
+Let $S_t\in\R^{m\times n}$ denote a \emph{score} matrix at training step $t$ whose intended semantics is a (soft) \emph{transport/transition operator}---for example, an attention-logit matrix, an OT-like coupling score, or any module that is designed (explicitly or implicitly) to satisfy prescribed row/column marginals. Since bistochasticity is naturally defined for \emph{nonnegative} matrices with prescribed marginals, we construct a nonnegative matrix via a stabilized entropic transform:
+\begin{equation}
+K_t = \exp\!\big((S_t - \max_{ij} S_t^{ij})/\tau\big), \quad \tau>0,
+\end{equation}
+applied elementwise. For square matrices with uniform marginals, the target constraint set is the bistochastic manifold. More generally, we consider the matrix-scaling constraint set with prescribed marginals $r\in\R^m_{+}$ and $c\in\R^n_{+}$ (with $\sum_i r_i=\sum_j c_j$):
+\begin{equation}
+\mathcal{BM}(r,c) = \{P\in\R^{m\times n}_{+}: P\mathbf{1}=r,\; P^\top\mathbf{1}=c\}.
+\end{equation}
+We approximate projection onto $\mathcal{BM}(r,c)$ via a few iterations of the Sinkhorn--Knopp algorithm:
+\begin{equation}
+P_t = \text{Sinkhorn}(K_t; r,c)\in\mathcal{BM}(r,c).
+\end{equation}
+
+\paragraph{Invariant constraint set $\mathcal{I}$.}
+$\mathcal{I} = \mathcal{BM}(r,c)$ (bistochasticity is the special case $m=n$ and $r=c=\tfrac{1}{n}\mathbf{1}$).
+
+\paragraph{Extraction operator $\Phi$.}
+$\Phi(S_t) = K_t$.
+
+\paragraph{Deviation metric (projection-to-constraint-set form).}
+We employ a normalized Frobenius distance to the Sinkhorn projection:
+\begin{equation}
+\mathcal{D}_{\text{BM}}(S_t)
+=
+\frac{\norm{K_t - P_t}_F}{\norm{K_t}_F+\eps}.
+\end{equation}
+This matches the general deviation-to-constraint-set template in Section~3, with $\Pi_{\mathcal{I}}$ instantiated by a finite-iteration Sinkhorn projection.
+\paragraph{Mass-normalized variant.}
+In practice, the entropic transform can be dominated by global mass/scale, making $\mathcal{D}_{\text{BM}}$ numerically saturated or nearly constant for some $S_t$ constructions.
+We therefore also consider a globally normalized matrix
+\[
+Q_t=\frac{K_t}{\langle \mathbf{1},K_t\mathbf{1}\rangle+\eps},
+\]
+and define the corresponding deviation
+\begin{equation}
+\mathcal{D}_{\text{BM}}^{(Q)}(S_t)
+=
+\frac{\norm{Q_t-\text{Sinkhorn}(Q_t;r,c)}_F}{\norm{Q_t}_F+\eps}.
+\end{equation}
+The pilot section reports both variants to make negative/lagging outcomes explicit.
+\paragraph{Practical instantiations of $S_t$.}
+While $S_t$ can be instantiated directly as attention logits in Transformer-style blocks, the constraint-set viewpoint also allows batch-level ``self-transport'' constructions: given a minibatch feature matrix $H_t\in\R^{B\times d}$ (e.g., penultimate-layer activations), define a similarity score matrix $S_t\in\R^{B\times B}$ (e.g., scaled dot-product similarities), apply the stabilized entropic transform, and monitor $\mathcal{D}_{\text{BM}}(S_t)$ as a training health signal. This yields a lightweight diagnostic even for non-attention architectures; however, we emphasize that the sensitivity of the signal can depend on the specific choice of $S_t$ (see ablations in Section~\ref{sec:pilot}).
+
+\section{Pilot Validation Protocol and Results Placeholder}
+\label{sec:pilot}
+
+This section specifies a minimal, reproducible pilot protocol for the training-warning diagnostic. We intend to release a reference implementation (code, seeds, and plotting scripts) at a public repository URL to be finalized here: \url{https://github.com/alexstar55/mve-training-warning.git}.
+
+\subsection{Pilot experimental design (MVE)}
+\textbf{Task.}
+Train a small MLP on synthetic nonlinear regression. Here ``MVE'' denotes a \emph{minimal viable experiment}: a small end-to-end setup that is fully specified (seeds, code, plots) to make the diagnostic claim quickly falsifiable and reproducible.
+
+\textbf{Instability injection.}
+Introduce an optimizer ``shock'' at step $t_0$ (e.g., learning-rate jump, removal of gradient clipping, or abrupt label-noise increase) to trigger a measurable loss spike or divergence.
+
+\textbf{Monitored signals.}
+Record per-step:
+(i) $\mathcal{D}_{\text{BM}}(S_t)$ and the mass-normalized $\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$;
+(ii) a pre-projection marginal violation $d_{\text{marg}}(Q_t)$ (optional, no Sinkhorn);
+(iii) training loss $\ell_t$ and an EMA $\tilde{\ell}_t$;
+(iv) gradient norm $g_t=\|\nabla_\theta \ell_t\|_2$ and validation loss (periodic).
+
+\textbf{Recommended ablations (to interpret failures).}
+Because the score construction matters, we recommend at least two ablations:
+(1) feature normalization on/off when constructing $S_t$ from minibatch features;
+(2) entropic temperature $\tau$ and Sinkhorn iteration count.
+
+\subsection{Thresholds and lead-time definition (standardized)}
+To make the monitoring claim falsifiable and comparable across runs, we define thresholds and lead time using a pre-shock baseline window.
+
+\paragraph{Baseline window.}
+Let $t_0$ denote the shock step. Define a baseline index set $\mathcal{B}=\{t: 0\le t < t_0\}$.
+
+\paragraph{Spike thresholds.}
+For a monitored scalar time series $x_t$ (e.g., $x_t=\mathcal{D}_{\text{BM}}(S_t)$, $x_t=g_t$, or $x_t=\tilde{\ell}_t$), compute baseline mean and standard deviation:
+\[
+\mu_x=\mathrm{mean}_{t\in\mathcal{B}}(x_t),\qquad
+\sigma_x=\mathrm{std}_{t\in\mathcal{B}}(x_t).
+\]
+Define the spike threshold as
+\[
+\theta_x = \mu_x + k\sigma_x,
+\]
+with a fixed $k$ (e.g., $k=5$) used across all runs. (If $x_t$ is heavy-tailed, a robust alternative is to use a high quantile, e.g., $\theta_x=\mathrm{quantile}_{0.995}(x_t)$ computed on $\mathcal{B}$.)
+
+\paragraph{Event times.}
+Define the first spike time for $x$ (after the baseline) as
+\[
+t_x = \min\{t\ge t_0:\ x_t > \theta_x\},
+\]
+and set $t_x=\infty$ if the set is empty.
+
+\paragraph{Lead time.}
+Choose a reference ``failure'' event time $t_{\text{fail}}$ (e.g., based on $\ell_t$ or $\tilde{\ell}_t$ crossing its threshold). The lead time (in steps) of monitor $x$ is then
+\[
+\Delta_x = t_{\text{fail}} - t_x.
+\]
+A positive $\Delta_x$ indicates that $x$ spikes \emph{before} the chosen failure indicator; $\Delta_x=0$ indicates simultaneity; $\Delta_x<0$ indicates that $x$ lags.
+
+\paragraph{Reporting.}
+Over multiple seeds, report $\mathrm{mean}(\Delta_x)$ and $\mathrm{std}(\Delta_x)$, and also report the ``hit rate'' $\mathbb{P}(t_x<\infty)$.
+
+\subsection{Pilot results (multi-seed summary)}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.42\textheight,keepaspectratio]{mve-training-warning/runs/norm_on/agg/plot_agg.png}
+\caption{Pilot MVE aggregate time-series (feature normalization: on; mean$\pm$std over N=10 seeds; dashed line marks the shock step).}
+\label{fig:pilot-agg-norm-on}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.95\linewidth,height=0.42\textheight,keepaspectratio]{mve-training-warning/runs/norm_off/agg/plot_agg.png}
+\caption{Pilot MVE aggregate time-series (feature normalization: off; mean$\pm$std over N=10 seeds; dashed line marks the shock step).}
+\label{fig:pilot-agg-norm-off}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lcccp{0.38\linewidth}@{}}
+\toprule
+\textbf{Monitor} & \textbf{Spike threshold} & \textbf{Hit rate} & \textbf{Lead time (steps)} & \textbf{Notes}\\
+\midrule
+
+\multicolumn{5}{@{}l@{}}{\textit{Feature normalization: on (N=10 seeds)}} \\
+$\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$ & $\mu+5\sigma$ & 1.00 & $-3.7\pm7.0$ & Sinkhorn distance on globally-normalized $Q_t$ \\
+Grad-norm & $\mu+5\sigma$ & 1.00 & $3.0\pm0.4$ & $\|\nabla_\theta \ell_t\|_2$ \\
+$d_{\text{marg}}(Q_t)$ & $\mu+5\sigma$ & 1.00 & $-3.7\pm7.0$ & Pre-projection marginal $\ell_1$ deviation on $Q_t$ \\
+
+\addlinespace
+\multicolumn{5}{@{}l@{}}{\textit{Feature normalization: off (N=10 seeds)}} \\
+$\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$ & $\mu+5\sigma$ & 0.30 & $-35.7\pm42.0$ & Sinkhorn distance on globally-normalized $Q_t$ \\
+Grad-norm & $\mu+5\sigma$ & 1.00 & $3.0\pm0.4$ & $\|\nabla_\theta \ell_t\|_2$ \\
+$d_{\text{marg}}(Q_t)$ & $\mu+5\sigma$ & 0.00 & N/A & Pre-projection marginal $\ell_1$ deviation on $Q_t$ \\
+
+\bottomrule
+\end{tabular}
+\caption{Pilot MVE quantitative summary. Threshold is baseline $\mu+k\sigma$ (here $k=5$). Lead time is defined relative to the failure indicator (Loss-EMA) as in Section~\ref{sec:pilot}.}
+\label{tab:pilot-summary}
+\end{table}
+\subsection{Closed-loop constraint+diagnostic weight sweep (C)}
+
+We additionally test a closed-loop configuration in which the same bistochastic-deviation signal is used both as
+(i) a monitoring channel and (ii) a differentiable regularizer added to the training objective:
+\[
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{base}} + \lambda_{\text{BM}}\cdot \mathrm{bm\_reg}(S_t),
+\]
+where $\mathrm{bm\_reg}(S_t)$ is chosen as $\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$ (mass-normalized). We sweep $\lambda_{\text{BM}}$ and compute hit rate / lead time using the same baseline-threshold protocol as Table~\ref{tab:pilot-summary} (threshold $\mu+5\sigma$, failure indicator Loss-EMA).
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{$\lambda_{\text{BM}}$} & \textbf{Monitor} & \textbf{Hit rate} & \textbf{Lead time (steps)} \\
+\midrule
+0    & $\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$ & 1.00 & $-3.7\pm7.0$ \\
+0    & $d_{\text{marg}}(Q_t)$               & 1.00 & $-3.7\pm7.0$ \\
+0    & Grad-norm                            & 1.00 & $3.0\pm0.4$ \\
+\addlinespace
+0.01 & $\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$ & 1.00 & $-3.2\pm4.7$ \\
+0.01 & $d_{\text{marg}}(Q_t)$               & 1.00 & $-2.9\pm4.6$ \\
+0.01 & Grad-norm                            & 1.00 & $3.0\pm0.6$ \\
+\addlinespace
+0.03 & $\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$ & 1.00 & $-1.1\pm2.6$ \\
+0.03 & $d_{\text{marg}}(Q_t)$               & 1.00 & $-1.8\pm2.5$ \\
+0.03 & Grad-norm                            & 1.00 & $3.0\pm0.6$ \\
+\addlinespace
+0.05 & $\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$ & 1.00 & $-0.3\pm0.6$ \\
+0.05 & $d_{\text{marg}}(Q_t)$               & 1.00 & $-1.1\pm2.4$ \\
+0.05 & Grad-norm                            & 1.00 & $3.0\pm0.4$ \\
+\addlinespace
+0.1  & $\mathcal{D}_{\text{BM}}^{(Q)}(S_t)$ & 1.00 & $-10.9\pm31.5$ \\
+0.1  & $d_{\text{marg}}(Q_t)$               & 1.00 & $-1.7\pm4.4$ \\
+0.1  & Grad-norm                            & 1.00 & $3.0\pm0.0$ \\
+\bottomrule
+\end{tabular}
+\caption{Closed-loop (C) regularization-weight sweep ($N=10$ seeds; feature normalization on). Threshold is baseline $\mu+5\sigma$; lead time is relative to Loss-EMA. This table is auto-generated by the script \texttt{sweep\_c\_weights.py} (outputs: \texttt{summary.csv} and \texttt{summary.tex}).}
+\label{tab:c-weight-sweep}
+\end{table}
+
+\paragraph{Interpretation (pilot-scale).}
+In this MVE, moderate $\lambda_{\text{BM}}$ reduces the average lag of $\mathcal{D}_{\text{BM}}^{(Q)}$ (best at $\lambda_{\text{BM}}=0.05$, lead $\approx -0.3$ steps), while a larger weight ($\lambda_{\text{BM}}=0.1$) yields a much more variable lead time (large standard deviation), suggesting that closed-loop regularization can affect the timing relationship between deviation signals and the chosen failure indicator in a non-monotone way.
+\paragraph{Ablation note.}
+In our MVE, $\mathcal{D}_{\text{BM}}(S_t)$ may remain nearly constant (hit-rate $\approx 0$) for certain $S_t$ constructions, even when loss/grad-norm show sharp instabilities. The mass-normalized $\mathcal{D}^{(Q)}_{\text{BM}}(S_t)$ can be more sensitive (showing visible fluctuations near the shock) but still may \emph{lag} the chosen failure indicator (e.g., we observed a case with hit=1 but $\Delta=-1$) or fail to trigger (hit=0) under other ablations (e.g., feature normalization off). We report these as negative/conditional results: diagnostic value depends on whether the chosen $S_t$ truly encodes a transport/transition object whose marginals are meaningfully constrained in the target system. Across seeds, this manifests most clearly in the normalization-off setting, where many runs show little response in $\mathcal{D}_{\text{BM}}^{(Q)}$ at the shock while a minority exhibit sharp but inconsistent spikes (reflected by a hit rate $<1$).
+Table~\ref{tab:c-weight-sweep} further shows that even when the monitor definition is fixed, the lead-time statistics can be sensitive to closed-loop regularization strength, motivating weight sweeps as part of falsifiable reporting.
+\paragraph{Why not monitor loss only?}
+Loss-based alarms require a well-defined loss (often labels) and are typically available only during training or evaluation; in deployment or black-box monitoring, loss may be unavailable or delayed. Invariant-deviation monitors target internal structure (e.g., transport-like operators) and are therefore intended as a complementary diagnostic channel---useful for attribution and cross-signal corroboration even when their lead time is not consistently positive.
+\section{Additional Directions (Brief Outlook)}
+
+We briefly summarize three additional instantiations of the same deviation-to-constraint-set diagnostic principle. These are included as outlook directions rather than fully validated contributions in this short paper.
+
+\subsection{Dynamical distortion via approximate symplecticity (conditional)}
+Under an appropriate differentiable state-space modeling assumption (e.g., a continuous hidden-state transition or an auxiliary learned state-space model), one may embed trajectories into an even-dimensional phase space and monitor approximate symplecticity defects of the corresponding Jacobians. This offers a potential diagnostic for reasoning-time distortions, but requires careful modeling of the state update and differentiability assumptions.
+\paragraph{Where symplectic monitoring can be actionable (simulation \& VLA).}
+In physics-based simulation and robotics/VLA settings, symplectic structure becomes operationally relevant \emph{only if} we can identify (or learn) a differentiable state update on an even-dimensional phase space, i.e., a latent $z_t=(q_t,p_t)\in\R^{2d}$ together with a one-step map
+\[
+z_{t+1}=f_\theta(z_t,a_t),
+\]
+where $a_t$ denotes control/action. Let $J_t=\frac{\partial f_\theta}{\partial z}$ be the Jacobian w.r.t.\ the state. Define the canonical symplectic matrix
+\[
+\Omega=\begin{pmatrix}0&I\\-I&0\end{pmatrix}.
+\]
+A direct diagnostic is the \emph{symplecticity defect}
+\[
+\delta_{\mathrm{symp}}(t)=\frac{\|J_t^\top \Omega J_t-\Omega\|_F}{\|\Omega\|_F+\eps},
+\]
+optionally paired with a volume-change surrogate such as $\delta_{\mathrm{vol}}(t)=\abs{\log\abs{\det J_t}}$ when $J_t$ is available. In practice, one can compute $J_t$ by automatic differentiation for the learned transition (or for an auxiliary latent dynamics model attached to a VLA policy). Sudden increases in $\delta_{\mathrm{symp}}(t)$ can serve as an alarm for distribution shift, sensor/actuation anomalies, or model mis-specification that breaks the assumed near-Hamiltonian structure.
+We emphasize the limitation: many real-world robotic systems are dissipative (friction, impacts, contact) and need not be symplectic; in such cases persistently large defects are expected and should be interpreted as ``assumption violated'' rather than ``system unhealthy''. The diagnostic is therefore most meaningful in controlled ablations (e.g., low-dissipation simulators) or for explicitly designed near-conservative latent dynamics modules.
+\subsection{Decision-boundary vulnerability via curvature estimators}
+% \subsection{Decision-Boundary Vulnerability Mapping via Directional Curvature}
+
+\textbf{Diagnostic objective.}
+Identify regions of high confidence yet fragility in classifier decision boundaries, constructing a vulnerability ``heatmap'' for targeted robustness interventions.
+
+\textbf{Mathematical formulation.}
+Let $\phi:\R^{d}\to\R^{p}$ denote a chosen representation map (e.g., logits or penultimate-layer features). Define the pullback (Gauss--Newton) metric at input $x$:
+\begin{equation}
+g_x = J_\phi(x)^\top J_\phi(x) + \lambda I,
+\qquad \lambda>0,
+\end{equation}
+where $J_\phi(x)$ is the Jacobian of $\phi$ at $x$. The regularization $\lambda I$ ensures positive-definiteness, making $(\R^{d},g)$ a well-defined Riemannian manifold.
+
+\textbf{Invariant constraint set $\mathcal{I}$.}
+Relative geometric flatness (i.e., small curvature magnitude) in regions near decision boundaries.
+
+\textbf{Extraction operator $\Phi$.}
+Compute curvature-related quantities induced by $g_x$.
+
+\textbf{Deviation metric (directional Ricci curvature).}
+To align curvature diagnostics with adversarially-relevant directions, we define a unit vector
+\begin{equation}
+v(x)=\frac{\nabla_x \ell(f(x),y)}{\norm{\nabla_x \ell(f(x),y)}_2+\eps},
+\end{equation}
+where $\ell(f(x),y)$ is the loss function. The diagnostic is then
+\begin{equation}
+\mathcal{D}_{\text{curv}}(x)=\abs{\mathrm{Ric}_x\!\big(v(x),v(x)\big)},
+\end{equation}
+measuring the magnitude of directional Ricci curvature along the loss gradient direction. \emph{Hypothesis:} High $\mathcal{D}_{\text{curv}}(x)$ indicates sharp geometric ``cliffs'' aligned with adversarially-exploitable directions, correlating with vulnerability to small perturbations. (In practice, $\mathrm{Ric}_x(v,v)$ is expensive in high dimensions and typically requires approximation---e.g., low-dimensional subspace probes, local finite-difference schemes, or automatic differentiation in tractable settings---so we treat this diagnostic as an estimator-driven signal rather than an exact curvature computation.)
+\subsection{Topological deepfake discrimination via persistent homology}
+% \subsection{Topological Deepfake Discrimination via Persistent Homology}
+
+\textbf{Diagnostic objective.}
+Discriminate between authentic and generated (deepfake) data by detecting discrepancies in the intrinsic topology of data manifolds within deep feature spaces.
+
+\textbf{Mathematical formulation.}
+Embed both real and generated samples into a deep feature space (e.g., CLIP or Inception embeddings), treating them as point clouds $\mathcal{X}_{\text{real}}$ and $\mathcal{X}_{\text{fake}}$. Apply persistent homology to compute persistence diagrams $\mathrm{PD}_k^{\text{real}}$ and $\mathrm{PD}_k^{\text{fake}}$ for homological degrees $k=0,\dots,k_{\max}$.
+
+\textbf{Invariant constraint set $\mathcal{I}$.}
+The persistent topological signature of authentic data.
+
+\textbf{Extraction operator $\Phi$.}
+$\Phi(\mathcal{X}) = \{\mathrm{PD}_k(\mathcal{X})\}_{k=0}^{k_{\max}}$.
+
+\textbf{Deviation metric (multi-scale diagram distance).}
+Rather than relying on single-scale Betti number vectors, we employ a weighted distance aggregated across persistence diagrams:
+\begin{equation}
+\mathcal{D}_{\text{topo}}
+=
+\sum_{k=0}^{k_{\max}} w_k \, d\!\left(\mathrm{PD}_k^{\text{fake}},\mathrm{PD}_k^{\text{real}}\right),
+\end{equation}
+where $d$ denotes the bottleneck distance or a Wasserstein distance on persistence diagrams, and $w_k\ge 0$ are degree-specific weights. \emph{Hypothesis:} Significant $\mathcal{D}_{\text{topo}}$ values indicate ``topological forgery''---manifold-level discrepancies that persist even when low-order statistics are adversarially matched.
+
+\section{Discussion and Outlook}
+
+The diagnostic framework presented in this work offers several notable advantages. First, it provides a mathematically-motivated and principled formulation for anomaly detection, grounding diagnostics in structural invariants rather than purely heuristic statistical tests. Second, it offers a \textbf{unifying perspective}, connecting diverse failure modes---from dynamical distortions to topological forgeries---through the common lens of constraint-set deviation. Third, it holds \textbf{proactive potential}, enabling early detection of subtle degradations before they escalate into overt failures measurable by conventional metrics.
+
+At the same time, the approach faces significant computational and modeling challenges. Persistent homology, while theoretically elegant, can be computationally intensive for large-scale point clouds. Practical estimation of curvature quantities in high-dimensional spaces remains an open problem requiring careful approximation schemes. Furthermore, the framework's efficacy depends critically on the appropriateness of the chosen invariant structures for a given model or task.
+
+\paragraph{Future directions.}
+We identify three priority areas for future work:
+\begin{enumerate}
+\item \textbf{Efficient approximations:} Develop scalable algorithms for approximate projection operators $\Pi_{\mathcal{I}}$ and curvature estimation, leveraging randomized numerical linear algebra and sparse representations.
+\item \textbf{Composite diagnostics:} Design principled fusion mechanisms to combine deviations from multiple invariants into unified, interpretable health scores.
+\item \textbf{Tool development and validation:} Translate the theoretical framework into user-friendly diagnostic APIs and conduct large-scale empirical validation across diverse model architectures and application domains.
+\end{enumerate}
+
+We complement prior invariance-based detection methods by extending the conceptual scope from feature-level statistical tests to structural constraint monitoring derived from dynamical, geometric, and topological principles. The framework presented herein represents an initial step toward mathematically-principled AI introspection. We are grateful for inspiration drawn from recent advances in architectural stability, including the Manifold-Constrained Hyper-Connections (mHC) framework \cite{deepseek2025mhc} and related work. Advancing this agenda toward rigorous formalization and large-scale deployment will require sustained interdisciplinary collaboration across AI, applied mathematics, and theoretical computer science communities. We welcome engagement from researchers interested in this emerging direction.
+
+\section{Conclusion}
+
+We have articulated a novel perspective for AI diagnostics grounded in the systematic monitoring of mathematical invariant violations. By investigating how model health relates to the preservation of fundamental structural properties---symplectic dynamics, bistochastic transport, curvature regularity, and persistent topological signatures---we propose a quantifiable and principled diagnostic paradigm. This contribution transcends mere technical innovation: it represents a conceptual shift toward understanding and safeguarding artificial intelligence through its intrinsic mathematical characteristics. As AI systems grow in complexity and societal integration, such foundational diagnostic frameworks will become increasingly essential for ensuring their reliability, safety, and trustworthiness.
+
+\bibliographystyle{plain}
+\bibliography{refs}
+\end{document}
