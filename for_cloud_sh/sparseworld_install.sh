@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-echo "==== SparseWorld 环境搭建开始 ===="
+echo "==== 本地构建 SparseWorld Docker 镜像并导出 ===="
 
-WORKDIR=${HOME}/workspace
+WORKDIR=${HOME}/workspace/offline_packages
 mkdir -p "${WORKDIR}"
 cd "${WORKDIR}"
 
@@ -17,43 +17,34 @@ fi
 
 cd SparseWorld
 
-# 2. 创建 conda 环境
-if command -v conda &> /dev/null; then
-  ENV_NAME=sparseworld
-  conda create -y -n ${ENV_NAME} python=3.11
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate ${ENV_NAME}
-else
-  echo "[ERROR] 未检测到 conda，请先安装再运行此脚本"
-  exit 1
-fi
+# 2. 生成 Dockerfile
+cat <<EOF > Dockerfile.sparseworld
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
 
-# 3. 安装 PyTorch（同样按实际 CUDA 版本调整）
-pip install torch==2.4.0 torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cu121
+# 设置国内源，方便后续在云端补充安装包
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
-# 4. 项目依赖
-if [ -f "requirements.txt" ]; then
-  pip install -r requirements.txt
-else
-  # 若没有，则按常见 occupancy/world model 项目手动补
-  pip install numpy scipy tqdm einops opencv-python
-fi
+WORKDIR /workspace/SparseWorld
 
-# 5. 可加上一些稀疏/几何相关库（视项目实际需要保留/删减）
-pip install pyg-lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.4.0+cu121.html || true
-pip install matplotlib plotly pyvista
+# 安装系统依赖
+RUN apt-get update && apt-get install -y git curl libgl1-mesa-glx libglib2.0-0 && rm -rf /var/lib/apt/lists/*
 
-# 6. 写 env.sh
-cat <<EOF > env.sh
-#!/usr/bin/env bash
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate ${ENV_NAME}
-export PYTHONPATH=$(pwd):\$PYTHONPATH
+# 复制项目文件
+COPY . /workspace/SparseWorld/
+
+# 安装 Python 依赖
+RUN if [ -f "requirements.txt" ]; then pip install -r requirements.txt; else pip install numpy scipy tqdm einops opencv-python; fi
+RUN pip install pyg-lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.4.0+cu121.html || true
+RUN pip install matplotlib plotly pyvista
 EOF
-chmod +x env.sh
 
-echo "==== SparseWorld 环境搭建完成 ===="
-echo "后续使用："
-echo "  cd ${WORKDIR}/SparseWorld"
-echo "  source env.sh"
-echo "  python scripts/demo_xxx.py   # 根据仓库实际脚本名称替换"
+# 3. 构建镜像
+echo "[INFO] 开始构建 Docker 镜像 sparseworld:v1 ..."
+docker build -t sparseworld:v1 -f Dockerfile.sparseworld .
+
+# 4. 导出镜像
+echo "[INFO] 正在导出镜像到 ${WORKDIR}/sparseworld_image.tar ..."
+docker save -o ../sparseworld_image.tar sparseworld:v1
+
+echo "==== SparseWorld 镜像构建与导出完成 ===="
+echo "请将 ${WORKDIR}/sparseworld_image.tar 上传至云服务器"
