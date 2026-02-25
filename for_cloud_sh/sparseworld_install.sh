@@ -8,14 +8,14 @@ mkdir -p "${WORKDIR}"
 cd "${WORKDIR}"
 
 # 1. 克隆仓库
-if [ ! -d "SparseWorld" ]; then
-  git clone https://github.com/MSunDYY/SparseWorld.git
+if [ ! -d "SparseWorld-TC" ]; then
+  git clone https://github.com/MrPicklesGG/SparseWorld-TC.git
 else
-  echo "[INFO] SparseWorld 已存在，尝试更新"
-  cd SparseWorld && git pull && cd ..
+  echo "[INFO] SparseWorld-TC 已存在，尝试更新"
+  cd SparseWorld-TC && git pull && cd ..
 fi
 
-cd SparseWorld
+cd SparseWorld-TC
 
 # 2. 生成 Dockerfile
 cat <<EOF > Dockerfile.sparseworld
@@ -24,13 +24,15 @@ FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
 # 设置国内源，方便后续在云端补充安装包
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
-WORKDIR /workspace/SparseWorld
+WORKDIR /workspace/SparseWorld-TC
 
 # 安装系统依赖
-RUN apt-get update && apt-get install -y git curl libgl1-mesa-glx libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y git curl libgl1-mesa-glx libglib2.0-0 && rm -rf /var/lib/apt/lists/*
 
 # 复制项目文件
-COPY . /workspace/SparseWorld/
+COPY . /workspace/SparseWorld-TC/
 
 # 安装 Python 依赖
 RUN if [ -f "requirements.txt" ]; then pip install -r requirements.txt; else pip install numpy scipy tqdm einops opencv-python; fi
