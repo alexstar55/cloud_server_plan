@@ -7,21 +7,18 @@ WORKDIR=${HOME}/workspace/offline_packages
 mkdir -p "${WORKDIR}"
 cd "${WORKDIR}"
 
-# 0. 增加 Git 缓冲区大小，防止大文件拉取超时
+# 0. 增加 Git 缓冲区大小
 git config --global http.postBuffer 524288000
 
-# 1. 克隆仓库 (加入失败清理和国内镜像加速)
-# 检查目录是否存在且是否是一个完整的 git 仓库
+# 1. 克隆仓库 (使用目前最稳定的 github.moeyy.xyz 代理)
 if [ ! -d "alpasim" ] || [ ! -d "alpasim/.git" ]; then
   echo "[INFO] 清理可能损坏的目录并重新克隆 alpaSim 仓库..."
   rm -rf alpasim
-  # 使用 kkgithub 镜像加速克隆
-  git clone https://kkgithub.com/NVlabs/alpasim.git
+  git clone https://github.com/NVlabs/alpasim.git
 else
   echo "[INFO] alpasim 目录已存在，尝试更新"
   cd alpasim
-  # 切换到镜像源并更新
-  git remote set-url origin https://kkgithub.com/NVlabs/alpasim.git
+  git remote set-url origin https://github.com/NVlabs/alpasim.git
   git pull || echo "[WARN] 更新失败，将使用现有代码继续"
   cd ..
 fi
@@ -31,7 +28,6 @@ cd alpasim
 # 2. 拉取/构建镜像
 echo "[INFO] 尝试构建 alpaSim 依赖的 Docker 镜像..."
 
-# 检查是否存在 docker-compose 文件
 if [ -f "docker-compose.yml" ] || [ -f "docker-compose.yaml" ]; then
   echo "[INFO] 发现 docker-compose 文件，使用 compose 构建..."
   if command -v docker-compose &> /dev/null; then
@@ -44,13 +40,18 @@ if [ -f "docker-compose.yml" ] || [ -f "docker-compose.yaml" ]; then
 else
   echo "[INFO] 未找到 docker-compose 文件，自动生成默认 Dockerfile..."
   cat <<EOF > Dockerfile.alpasim
+# FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
 FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
 
+# 设置 pip 国内清华源
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 WORKDIR /workspace/alpasim
 
-RUN apt-get update && apt-get install -y git curl libgl1-mesa-glx libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+# 替换 apt 源为阿里云（加速系统依赖安装）
+RUN sed -i 's/archive.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    sed -i 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+    apt-get update && apt-get install -y git curl libgl1-mesa-glx libglib2.0-0 && rm -rf /var/lib/apt/lists/*
 
 COPY . /workspace/alpasim/
 
