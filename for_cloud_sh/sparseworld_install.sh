@@ -45,8 +45,8 @@ echo "[INFO] 开始构建 Docker 镜像 sparseworld:v1 ..."
 docker build -t sparseworld:v1 -f Dockerfile.sparseworld .
 
 # 4. 导出镜像
-echo "[INFO] 正在导出镜像到 ${WORKDIR}/sparseworld_image.tar ..."
-docker save -o ../sparseworld_image.tar sparseworld:v1
+# echo "[INFO] 正在导出镜像到 ${WORKDIR}/sparseworld_image.tar ..."
+# docker save -o ../sparseworld_image.tar sparseworld:v1
 
-echo "==== SparseWorld 镜像构建与导出完成 ===="
-echo "请将 ${WORKDIR}/sparseworld_image.tar 上传至云服务器"
+# echo "==== SparseWorld 镜像构建与导出完成 ===="
+# echo "请将 ${WORKDIR}/sparseworld_image.tar 上传至云服务器"
