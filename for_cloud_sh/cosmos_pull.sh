@@ -14,11 +14,11 @@ git config --global http.postBuffer 524288000
 if [ ! -d "cosmos-transfer1" ] || [ ! -d "cosmos-transfer1/.git" ]; then
   echo "[INFO] 克隆 cosmos-transfer1 仓库..."
   rm -rf cosmos-transfer1
-  git clone https://github.moeyy.xyz/https://github.com/nvidia-cosmos/cosmos-transfer1.git
+  git clone https://github.com/nvidia-cosmos/cosmos-transfer1.git
 else
   echo "[INFO] cosmos-transfer1 已存在，尝试更新"
   cd cosmos-transfer1
-  git remote set-url origin https://github.moeyy.xyz/https://github.com/nvidia-cosmos/cosmos-transfer1.git
+  git remote set-url origin https://github.com/nvidia-cosmos/cosmos-transfer1.git
   git pull || echo "[WARN] 更新失败，将使用现有代码继续"
   cd ..
 fi
@@ -48,10 +48,10 @@ RUN sed -i "s/archive.ubuntu.com/mirrors.aliyun.com/g" /etc/apt/sources.list \&\
 # 3. 构建镜像
 echo "[INFO] 开始构建 Docker 镜像 cosmos-transfer1:v1 ..."
 docker build -t cosmos-transfer1:v1 -f Dockerfile .
-
+echo "==== Cosmos 镜像构建完成 ===="
 # 4. 导出镜像
-echo "[INFO] 正在导出镜像到 ${WORKDIR}/cosmos_transfer_image.tar ..."
-docker save -o ../cosmos_transfer_image.tar cosmos-transfer1:v1
+# echo "[INFO] 正在导出镜像到 ${WORKDIR}/cosmos_transfer_image.tar ..."
+# docker save -o ../cosmos_transfer_image.tar cosmos-transfer1:v1
 
-echo "==== Cosmos 镜像构建与导出完成 ===="
-echo "请将 ${WORKDIR}/cosmos_transfer_image.tar 上传至云服务器"
+# echo "==== Cosmos 镜像构建与导出完成 ===="
+# echo "请将 ${WORKDIR}/cosmos_transfer_image.tar 上传至云服务器"
