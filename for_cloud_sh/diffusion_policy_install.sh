@@ -9,7 +9,7 @@ cd "${WORKDIR}"
 
 # 1. 克隆仓库
 if [ ! -d "diffusion_policy" ]; then
-  git clone https://github.moeyy.xyz/https://github.com/real-stanford/diffusion_policy.git
+  git clone https://github.com/real-stanford/diffusion_policy.git
 else
   echo "[INFO] diffusion_policy 已存在，尝试更新"
   cd diffusion_policy && git pull && cd ..
