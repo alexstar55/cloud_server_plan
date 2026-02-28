@@ -1,0 +1,3 @@
+# batch_name	input_json	output_dir	camera_calib	localization	seq_data	pathmap	sweep_root(optional)
+batch_a	/data/raw/merged_batch_a.json	/data/nuscenes/v1.0-trainval-batch-a	/data/calib/camera_calib	/data/localization	/data/seq_data	/data/pathmap/merged_map.json	/data/sweep_root
+batch_b	/data/raw/merged_batch_b.json	/data/nuscenes/v1.0-trainval-batch-b	/data/calib/camera_calib	/data/localization	/data/seq_data	/data/pathmap/merged_map.json	/data/sweep_root
