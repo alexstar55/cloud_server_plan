@@ -1,6 +1,6 @@
 **收到显存细节——单卡48GB、双卡96GB但无NVLink。这反而让你拥有一个“单卡巨无霸、双卡各自为战”的独特试验台。**
 
-**结论先行**：这台机器是**mHC与TopoLoss验证的黄金配置**，但必须**放弃双卡联合训练，拥抱单卡大batch + 双卡并行搜参**。本月只做两条主线：**Phase 1（mHC+Diffusion Policy）**与**Phase 2（TopoLoss+SparseWorld-TC）**。
+**结论先行**：这台机器是**mHC与TopoLoss验证的黄金配置**，但必须**放弃双卡联合训练，拥抱单卡大batch + 双卡并行搜参**。本月只做两条主线：**Phase 1（mHC+Diffusion Policy）**与**Phase 2（TopoLoss+SparseWorld-TC）**；**3DGS仅作为Phase 2增强层，不独立立项**。
 
 ---
 
@@ -85,6 +85,15 @@ out = torch.einsum('oc,btchw->bthw', weight_matrix, out_4x)
 - **生成质量的结构性提升**：在不增加模型参数的情况下，显著减少生成场景中的物理/结构违和感。
 - **直接产出一篇极具数学深度的顶会论文**（即 `main0.tex` 的完全体）。
 
+### Phase 2 增强层（可选）：3DGS 融入，不新增Phase
+- 目标：把 Phase 2 的输出从“仅拓扑指标可验证”升级为“可渲染、可直观对比、可下游复用”。
+- 原则：不改 Phase 1，不新增独立 Phase；仅作为 Phase 2 的实现层分支。
+- 最小 Gate：
+  1) **Gate-3DGS-A（1-2天）**：跑通最小3DGS基线并输出可视化。
+  2) **Gate-3DGS-B（2-3天）**：验证拓扑损失可作用于3DGS中心点/几何表示（小样本即可）。
+  3) **Gate-3DGS-C（可选）**：打通 `anygs2nuscenes` 原型，产出1批可读数据。
+- 止损规则：任一 Gate 连续 2 天无实质产出，冻结3DGS分支，回到 Phase 2 保底方案（TopoLoss + SparseWorld-TC）。
+
 ---
 
 ## 🦾 具身·延后方向：RT-1-X 的物体操作记忆（本月不主攻）
@@ -141,12 +150,14 @@ out = torch.einsum('oc,btchw->bthw', weight_matrix, out_4x)
 
 ## 5) 本月范围冻结（避免分散）
 - 必做：`mHC + Diffusion Policy`、`TopoLoss + SparseWorld-TC`。
+- 可选增强：`3DGS@Phase2`（仅在主线与必做任务不受影响时并行探索）。
 - 选做：`mHC + BEVFormer` 仅做最小可跑验证，不作为主输出。
 - 延后：`Engram + RT-1-X` 仅保留方案，不进入本月训练排期。
 
 ## 6) 夜间算力策略（一个月版）
 - 卡0：Phase 1（Diffusion Policy）夜间批量训练/消融。
 - 卡1：Phase 2（SparseWorld-TC）夜间批量训练/对比。
+- 若开启3DGS增强分支：仅占用卡1的空档时间，不挤占主线夜跑窗口。
 - 白天只做：日志复盘、图表整理、脚本修复、下一轮任务下发。
 
 ## 7) 与论文嵌入关系（本月）
@@ -230,6 +241,7 @@ Phase 1 优先追求**“可复现 + 可归因 + 可写”**；Phase 2 优先追
 **Phase 2**：
 - [ ] TopoLoss + SparseWorld-TC 在nuScenes生成任务上实现**结构坍塌显著减少**
 - [ ] 拓扑损失梯度回传稳定，Betti数曲线收敛
+- [ ] （可选）3DGS增强分支完成 Gate-3DGS-A/B 最小验证，不影响主线周更
 
 ---
 
