@@ -179,22 +179,36 @@ find ~/nightly/artifacts -type f | wc -l
 
 ---
 
-## 7. 一键夜跑脚本框架（建议）
+## 7. 一键夜跑脚本框架（统一入口）
 
 ```bash
-# 仅框架示例：按当晚任务启停
-bash nightly_precheck.sh
-bash nightly_launch_alpasim.sh
-bash nightly_launch_sparsedrive.sh
-# 或替换为 diffusion_policy
-bash nightly_watchdog.sh
+# 最小一键运行（默认：precheck + watchdog + morning_summary）
+bash nightly_run_all.sh
+
+# 常见组合1：执行批量转换
+RUN_CONVERT_BATCH=1 BATCH_FILE=~/nightly/configs/nightly_batches.tsv bash nightly_run_all.sh
+
+# 常见组合2：先转换再合并
+RUN_CONVERT_BATCH=1 BATCH_FILE=~/nightly/configs/nightly_batches.tsv \
+RUN_MERGE=1 DATASETS_LIST=~/nightly/configs/datasets.list OUT_DIR=~/nightly/artifacts/merged/v1.0-mini \
+bash nightly_run_all.sh
+
+# 常见组合3：追加 4D 伪标签延伸步骤（可选）
+RUN_PSEUDOLABEL=1 PSEUDOLABEL_CMD='python3 /path/to/your_pseudolabel_infer.py --input ... --output ...' \
+bash nightly_run_all.sh
 ```
 
 建议最小脚本集合：
 - nightly_precheck.sh（环境检查）
-- nightly_launch_*.sh（按镜像启动任务）
+- nightly_run_all.sh（统一入口编排）
 - nightly_watchdog.sh（心跳+异常记录）
 - morning_summary.sh（早晨汇总）
+
+关键环境变量：
+- `RUN_CONVERT_BATCH=1` 时需提供 `BATCH_FILE`
+- `RUN_MERGE=1` 时需提供 `DATASETS_LIST` 与 `OUT_DIR`
+- `RUN_PSEUDOLABEL=1` 时需提供 `PSEUDOLABEL_CMD`
+- `WATCHDOG_INTERVAL_SEC` 可调（默认 600 秒）
 
 ---
 
